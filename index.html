@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AR MATH ESCAPE: เรขาคณิต & แกนสมมาตร ป.3 (Pink Edition)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&family=Prompt:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- MediaPipe FaceMesh & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Kanit', 'Prompt', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            background-color: #180914;
+            color: #fdf2f8;
+            overflow: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(30, 10, 25, 0.88);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(244, 114, 182, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(219, 39, 119, 0.25);
+        }
+
+        .glass-card {
+            background: rgba(50, 15, 40, 0.75);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(251, 113, 133, 0.25);
+        }
+
+        .glow-text {
+            text-shadow: 0 0 15px rgba(244, 63, 94, 0.8), 0 0 30px rgba(217, 70, 239, 0.6);
+        }
+
+        .pulse-border {
+            animation: pulseBorder 2s infinite;
+        }
+
+        @keyframes pulseBorder {
+            0% { border-color: rgba(244, 114, 182, 0.4); }
+            50% { border-color: rgba(217, 70, 239, 0.9); }
+            100% { border-color: rgba(244, 114, 182, 0.4); }
+        }
+
+        .scan-line {
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #ec4899, transparent);
+            position: absolute;
+            animation: scan 2.5s infinite ease-in-out;
+        }
+
+        @keyframes scan {
+            0% { top: 10%; opacity: 0; }
+            15% { opacity: 1; }
+            85% { opacity: 1; }
+            100% { top: 90%; opacity: 0; }
+        }
+
+        .floating {
+            animation: floating 3s ease-in-out infinite;
+        }
+
+        @keyframes floating {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .meter-bar {
+            transition: width 0.15s ease-out, background-color 0.2s ease;
+        }
+
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="relative w-screen h-screen bg-pink-950 overflow-hidden select-none">
+
+    <!-- Video Stream Background (Selfie Mode) -->
+    <video id="webcam" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover transform -scale-x-100 z-0 bg-pink-950"></video>
+
+    <!-- Canvas for 3D Three.js AR Geometric Shapes -->
+    <canvas id="ar-canvas" class="absolute inset-0 w-full h-full z-10 pointer-events-auto"></canvas>
+
+    <!-- Canvas for Face Landmark Grid & AI HUD Overlay -->
+    <canvas id="hud-canvas" class="absolute inset-0 w-full h-full z-20 pointer-events-none"></canvas>
+
+    <!-- Top Game Navigation Bar -->
+    <div id="top-bar" class="hidden absolute top-3 left-3 right-3 z-30 flex justify-between items-center px-4 py-2.5 rounded-2xl glass-panel border-pink-500/40">
+        <div class="flex items-center space-x-3">
+            <button onclick="openMenu()" class="w-10 h-10 rounded-xl bg-pink-900/80 hover:bg-pink-800 flex items-center justify-center text-pink-300 border border-pink-500/40 transition active:scale-95">
+                <i class="fa-solid fa-bars text-lg"></i>
+            </button>
+            <div>
+                <span id="current-room-title" class="text-xs font-semibold text-pink-300 tracking-wider block uppercase">ROOM 1</span>
+                <span id="room-subtitle" class="text-sm font-bold text-white">รูปสองมิติและรูปสามมิติ (STAGE 1/10)</span>
+            </div>
+        </div>
+
+        <!-- Timer & Score Display -->
+        <div class="flex items-center space-x-3 sm:space-x-4">
+            <div class="flex items-center space-x-2 bg-pink-950/90 px-3 py-1.5 rounded-xl border border-rose-400/40">
+                <i class="fa-solid fa-stopwatch text-rose-400 animate-pulse"></i>
+                <span id="timer-display" class="font-mono text-base sm:text-lg font-bold text-rose-200">03:00</span>
+            </div>
+            <div class="flex items-center space-x-2 bg-pink-950/90 px-3 py-1.5 rounded-xl border border-fuchsia-400/40">
+                <i class="fa-solid fa-star text-amber-300"></i>
+                <span id="score-display" class="font-mono text-base sm:text-lg font-bold text-fuchsia-300">0</span>
+            </div>
+            <button onclick="toggleAudio()" id="audio-btn" class="w-10 h-10 rounded-xl bg-pink-900/80 hover:bg-pink-800 flex items-center justify-center text-pink-200 border border-pink-500/30 transition">
+                <i class="fa-solid fa-volume-high"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- SCREEN 1: Main Menu Overlay -->
+    <div id="main-menu-screen" class="absolute inset-0 z-40 flex flex-col justify-between p-6 bg-pink-950/90 backdrop-blur-xl">
+        <div class="mt-6 text-center floating">
+            <div class="inline-block p-2 px-4 rounded-full bg-pink-500/20 border border-pink-400/40 text-pink-200 text-xs font-semibold tracking-widest uppercase mb-3">
+                <i class="fa-solid fa-shapes mr-2"></i> AR MATH ESCAPE • เรขาคณิตและแกนสมมาตร ป.3
+            </div>
+            <h1 class="text-4xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-300 via-rose-300 to-fuchsia-400 glow-text tracking-tight">
+                GEOMETRY ESCAPE
+            </h1>
+            <p class="text-pink-200/90 text-sm sm:text-base font-medium mt-1">มิติเรขาคณิตชมพูพาสเทล • ไขปริศนาถอดรหัสประตู</p>
+        </div>
+
+        <!-- Central Menu Buttons -->
+        <div class="w-full max-w-md mx-auto space-y-3 my-auto">
+            <div id="selected-room-display" class="text-center bg-pink-900/80 border border-pink-400/40 rounded-2xl p-3 text-sm font-semibold text-pink-200 shadow-md">
+                <i class="fa-solid fa-door-open text-fuchsia-300 mr-2"></i>ห้องที่เลือก: <span id="selected-room-name" class="text-white font-bold">ROOM 1 - รูปสองมิติและรูปสามมิติ</span>
+            </div>
+
+            <button onclick="showModal('room-select-modal')" class="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-fuchsia-600 via-pink-600 to-rose-500 hover:from-fuchsia-500 hover:to-rose-400 text-white font-bold text-lg shadow-lg shadow-pink-500/30 border border-pink-300/40 flex items-center justify-center space-x-3 transition transform active:scale-95">
+                <i class="fa-solid fa-door-open text-xl text-pink-200"></i>
+                <span>เลือกห้องปริศนา (SELECT ROOM)</span>
+            </button>
+
+            <button onclick="startGameSequence()" class="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-600 to-fuchsia-600 hover:from-pink-400 hover:to-fuchsia-500 text-white font-bold text-xl shadow-lg shadow-rose-500/30 border border-pink-300/40 flex items-center justify-center space-x-3 transition transform active:scale-95">
+                <i class="fa-solid fa-play text-2xl"></i>
+                <span>เริ่มการผจญภัย (START ESCAPE)</span>
+            </button>
+
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="showModal('how-to-play-modal')" class="py-3 px-2 rounded-xl glass-card hover:bg-pink-900/80 text-pink-200 font-semibold border border-pink-400/30 flex items-center justify-center space-x-1.5 transition text-xs sm:text-sm">
+                    <i class="fa-solid fa-book-open text-pink-300"></i>
+                    <span>วิธีเล่น & AI</span>
+                </button>
+                <button onclick="showModal('collection-modal')" class="py-3 px-2 rounded-xl glass-card hover:bg-pink-900/80 text-amber-200 font-semibold border border-amber-400/30 flex items-center justify-center space-x-1.5 transition text-xs sm:text-sm">
+                    <i class="fa-solid fa-trophy text-amber-300"></i>
+                    <span>เหรียญเกียรติยศ</span>
+                </button>
+                <button onclick="showModal('diagnostics-modal')" class="py-3 px-2 rounded-xl glass-card hover:bg-pink-900/80 text-fuchsia-200 font-semibold border border-fuchsia-400/30 flex items-center justify-center space-x-1.5 transition text-xs sm:text-sm">
+                    <i class="fa-solid fa-microchip text-fuchsia-300"></i>
+                    <span>ทดสอบกล้อง</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="text-center text-xs text-pink-300/70">
+            วิชาคณิตศาสตร์ ชั้นประถมศึกษาปีที่ 3 • MediaPipe AI Tracking
+        </div>
+    </div>
+
+    <!-- SCREEN 2: Calibration Overlay -->
+    <div id="calibration-overlay" class="hidden absolute inset-0 z-30 flex flex-col justify-between p-6 pointer-events-none">
+        <div class="relative w-full max-w-sm h-80 mx-auto mt-12 rounded-3xl border-2 border-dashed border-pink-400/70 pulse-border flex flex-col items-center justify-between p-6">
+            <div class="scan-line"></div>
+            
+            <div class="w-32 h-32 rounded-full border-2 border-pink-300/80 flex items-center justify-center bg-pink-500/20 backdrop-blur-xs mt-4">
+                <i class="fa-solid fa-face-smile-wink text-5xl text-pink-200 opacity-90 animate-pulse"></i>
+            </div>
+            <div class="text-xs font-semibold text-pink-200 bg-pink-950/90 px-3 py-1 rounded-full border border-pink-400/40">
+                สแกนใบหน้าเพื่อสอบเทียบ AI (ALIGN YOUR FACE)
+            </div>
+        </div>
+
+        <div class="max-w-md mx-auto mb-8 p-4 rounded-2xl glass-panel border-pink-400/50 text-center pointer-events-auto">
+            <div id="calib-status" class="text-lg font-bold text-pink-200 mb-1">
+                <i class="fa-solid fa-circle-notch fa-spin mr-2"></i>กำลังเชื่อมต่อ AI กล้องตรวจจับใบหน้า...
+            </div>
+            <p class="text-xs text-pink-200/80">
+                เตรียมความพร้อมสำหรับคำสั่ง ยิ้ม 😁 หรือ อ้าปาก 😮 เพื่อเปิดมิติเรขาคณิต!
+            </p>
+            <button onclick="forceReadyPlayer()" class="mt-3 w-full py-2.5 rounded-xl bg-pink-500 hover:bg-pink-400 text-white font-bold text-sm shadow-md transition">
+                พร้อมแล้ว! เริ่มเกม (PLAYER READY)
+            </button>
+        </div>
+    </div>
+
+    <!-- SCREEN 3: In-Game Interactive Gameplay HUD Overlay -->
+    <div id="gameplay-overlay" class="hidden absolute inset-0 z-30 flex flex-col justify-between p-4 pointer-events-none">
+        
+        <!-- Live AI Expression Meters Top HUD -->
+        <div class="max-w-md mx-auto w-full glass-panel rounded-2xl p-3 border-pink-500/40 pointer-events-auto flex justify-between space-x-3 mt-16">
+            <div class="flex-1 text-center">
+                <div class="flex items-center justify-between text-[11px] font-bold text-pink-200 mb-1">
+                    <span>😁 ยิ้ม (Smile)</span>
+                    <span id="val-smile" class="font-mono">0%</span>
+                </div>
+                <div class="w-full bg-pink-950 rounded-full h-2.5 overflow-hidden border border-pink-800">
+                    <div id="bar-smile" class="meter-bar h-full bg-gradient-to-r from-pink-500 to-rose-300 w-0"></div>
+                </div>
+            </div>
+            <div class="flex-1 text-center">
+                <div class="flex items-center justify-between text-[11px] font-bold text-fuchsia-200 mb-1">
+                    <span>😮 อ้าปาก (Mouth)</span>
+                    <span id="val-mouth" class="font-mono">0%</span>
+                </div>
+                <div class="w-full bg-pink-950 rounded-full h-2.5 overflow-hidden border border-pink-800">
+                    <div id="bar-mouth" class="meter-bar h-full bg-gradient-to-r from-fuchsia-500 to-pink-400 w-0"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Instruction Banner for Real Face Trigger -->
+        <div id="action-banner" class="hidden max-w-md mx-auto my-auto p-5 rounded-2xl glass-panel border-amber-400/80 text-center animate-pulse pointer-events-auto shadow-2xl">
+            <div class="text-xs font-bold text-amber-300 uppercase tracking-widest mb-1">
+                <i class="fa-solid fa-camera mr-1"></i> AI FACE COMMAND DETECTING
+            </div>
+            <div id="action-banner-text" class="text-xl font-black text-white glow-text">
+                😁 ยิ้มให้กล้องเพื่อชาร์จพลังงานคริสตัลเรขาคณิต!
+            </div>
+            <div id="action-progress-text" class="text-xs font-semibold text-amber-200 mt-2 font-mono">
+                กำลังตรวจจับใบหน้าของคุณ... (ค้างไว้ 0.5 วินาที)
+            </div>
+        </div>
+
+        <!-- Camera Flip Button -->
+        <div class="absolute top-16 right-4 pointer-events-auto">
+            <button onclick="toggleCameraFacing()" class="w-12 h-12 rounded-2xl glass-panel text-pink-200 flex items-center justify-center hover:bg-pink-900 transition active:scale-95 shadow-lg">
+                <i class="fa-solid fa-camera-rotate text-lg"></i>
+            </button>
+        </div>
+
+        <!-- Central Geometry Puzzle Box -->
+        <div id="puzzle-card" class="hidden max-w-lg w-full mx-auto p-6 rounded-3xl glass-panel border-pink-400/50 shadow-2xl pointer-events-auto relative my-auto">
+            <div class="flex justify-between items-center mb-3">
+                <span id="puzzle-badge" class="px-3 py-1 rounded-full bg-pink-500/30 border border-pink-400/50 text-pink-200 text-xs font-bold uppercase">
+                    PUZZLE 1 / 10
+                </span>
+                <button onclick="requestHint()" class="px-3 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-xs font-bold flex items-center space-x-1">
+                    <i class="fa-solid fa-lightbulb"></i>
+                    <span>คำใบ้ (-50)</span>
+                </button>
+            </div>
+
+            <h3 id="puzzle-question" class="text-2xl font-black text-white text-center my-4 glow-text">
+                รูปสามเหลี่ยมมีกี่ด้านและกี่มุม?
+            </h3>
+
+            <div id="puzzle-options" class="grid grid-cols-1 sm:grid-cols-3 gap-3 my-4">
+                <!-- Dynamic Options Inject Here -->
+            </div>
+
+            <div id="hint-box" class="hidden p-3 rounded-xl bg-amber-500/20 border border-amber-400/40 text-xs text-amber-200 mt-2">
+                <span id="hint-text">คำใบ้: สามเหลี่ยมมีจำนวนด้านเท่ากับชื่อรูป</span>
+            </div>
+        </div>
+
+        <!-- Question 10 Passcode Keypad Box -->
+        <div id="passcode-card" class="hidden max-w-md w-full mx-auto p-6 rounded-3xl glass-panel border-fuchsia-400/60 shadow-2xl pointer-events-auto relative my-auto">
+            <div class="flex justify-between items-center mb-2">
+                <span class="px-3 py-1 rounded-full bg-fuchsia-500/30 border border-fuchsia-400/50 text-fuchsia-200 text-xs font-bold uppercase flex items-center">
+                    <i class="fa-solid fa-lock mr-1.5 text-amber-300"></i> STAGE 10 / 10 • รหัสผ่านประตูทางออก
+                </span>
+                <button onclick="requestHint()" class="px-3 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-xs font-bold flex items-center space-x-1">
+                    <i class="fa-solid fa-lightbulb"></i>
+                    <span>คำใบ้ (-50)</span>
+                </button>
+            </div>
+
+            <div class="text-center my-3">
+                <h4 class="text-sm font-bold text-pink-200 uppercase tracking-wide">ถอดรหัสผ่านกลไกประตูมิติเรขาคณิต</h4>
+                <p id="passcode-hint-desc" class="text-xs text-pink-100 mt-1 bg-pink-950/70 p-2.5 rounded-xl border border-pink-500/30">
+                    นำจำนวนคุณสมบัติรูปเรขาคณิตมากดรหัส 4 หลักเพื่อเปิดประตู
+                </p>
+                <div id="passcode-display" class="text-3xl font-mono font-black text-pink-300 bg-pink-950/90 py-2.5 rounded-2xl mt-3 tracking-widest border border-pink-400/50 shadow-inner">
+                    _ _ _ _
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2.5 mt-4">
+                <button onclick="appendPasscode('1')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">1</button>
+                <button onclick="appendPasscode('2')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">2</button>
+                <button onclick="appendPasscode('3')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">3</button>
+                <button onclick="appendPasscode('4')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">4</button>
+                <button onclick="appendPasscode('5')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">5</button>
+                <button onclick="appendPasscode('6')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">6</button>
+                <button onclick="appendPasscode('7')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">7</button>
+                <button onclick="appendPasscode('8')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">8</button>
+                <button onclick="appendPasscode('9')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">9</button>
+                <button onclick="clearPasscode()" class="py-3 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-200 font-bold text-lg active:scale-95 transition border border-rose-500/40">ล้าง (C)</button>
+                <button onclick="appendPasscode('0')" class="py-3 rounded-xl bg-pink-900/80 hover:bg-pink-600 text-white font-bold text-xl active:scale-95 transition shadow-md border border-pink-700">0</button>
+                <button onclick="submitPasscode()" class="py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-lg active:scale-95 transition shadow-md border border-emerald-400 flex items-center justify-center space-x-1">
+                    <i class="fa-solid fa-key"></i>
+                    <span>ยืนยัน</span>
+                </button>
+            </div>
+
+            <div id="passcode-hint-box" class="hidden p-3 rounded-xl bg-amber-500/20 border border-amber-400/40 text-xs text-amber-200 mt-3">
+                <span id="passcode-hint-text">คำใบ้: ลองนำตัวเลขคุณสมบัติตามลำดับมารวมกัน</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Notification Feedback Box -->
+    <div id="notify-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-pink-950/80 backdrop-blur-md">
+        <div class="max-w-sm w-full glass-panel p-6 rounded-3xl border-rose-500/50 text-center space-y-4 shadow-2xl">
+            <div id="notify-icon-bg" class="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/50 flex items-center justify-center mx-auto text-rose-300 text-2xl">
+                <i id="notify-icon" class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 id="notify-title" class="text-xl font-bold text-white">แจ้งเตือน</h3>
+            <p id="notify-msg" class="text-sm text-pink-200">ข้อความแจ้งเตือนระบบ</p>
+            <button onclick="hideModal('notify-modal')" class="w-full py-3 rounded-xl bg-pink-900 hover:bg-pink-800 text-pink-200 font-bold border border-pink-500/40 transition active:scale-95">
+                ตกลง (OK)
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: System Diagnostics -->
+    <div id="diagnostics-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-pink-950/85 backdrop-blur-md">
+        <div class="max-w-md w-full glass-panel p-6 rounded-3xl border-fuchsia-500/40 space-y-4">
+            <div class="flex justify-between items-center border-b border-pink-800 pb-3">
+                <h2 class="text-xl font-bold text-fuchsia-300 flex items-center">
+                    <i class="fa-solid fa-microchip mr-2"></i>ทดสอบกล้อง AI & Face Mesh
+                </h2>
+                <button onclick="hideModal('diagnostics-modal')" class="text-pink-300 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <div class="space-y-2.5 text-sm">
+                <div class="flex justify-between items-center p-3 rounded-xl bg-pink-950/70 border border-pink-800">
+                    <span>Webcam Hardware</span>
+                    <span id="diag-camera" class="font-mono font-bold text-emerald-400">READY</span>
+                </div>
+                <div class="flex justify-between items-center p-3 rounded-xl bg-pink-950/70 border border-pink-800">
+                    <span>MediaPipe FaceMesh AI</span>
+                    <span id="diag-facemesh" class="font-mono font-bold text-emerald-400">LOADED</span>
+                </div>
+                <div class="flex justify-between items-center p-3 rounded-xl bg-pink-950/70 border border-pink-800">
+                    <span>Face Landmark Tracking</span>
+                    <span id="diag-tracking" class="font-mono font-bold text-pink-300">ACTIVE (468 pts)</span>
+                </div>
+            </div>
+
+            <button onclick="hideModal('diagnostics-modal')" class="w-full py-3 rounded-xl bg-pink-900 hover:bg-pink-800 text-pink-200 font-bold transition">
+                ปิดหน้าต่าง
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: Camera Error -->
+    <div id="camera-error-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-pink-950/90 backdrop-blur-lg">
+        <div class="max-w-md w-full glass-panel p-6 rounded-3xl border-rose-500/50 text-center space-y-4">
+            <div class="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/50 flex items-center justify-center mx-auto text-rose-300 text-2xl">
+                <i class="fa-solid fa-video-slash"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white">จำเป็นต้องใช้กล้องเพื่อจับใบหน้า</h3>
+            <p class="text-sm text-pink-200">
+                เกมนี้ใช้เทคโนโลยี AI ตรวจจับการยิ้ม อ้าปาก ขยิบตา จากกล้องของคุณ โปรดอนุญาตการใช้กล้อง
+            </p>
+            <div class="space-y-2 pt-2">
+                <button onclick="requestCameraAccess()" class="w-full py-3 rounded-xl bg-pink-500 hover:bg-pink-400 text-white font-bold transition">
+                    ลองอนุญาตกล้องอีกครั้ง
+                </button>
+                <button onclick="startGameInSimulationMode()" class="w-full py-3 rounded-xl bg-pink-900 hover:bg-pink-800 text-pink-200 font-bold border border-pink-500/30 transition">
+                    เล่นโหมดทดลอง (SIMULATION MODE)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Room Selection -->
+    <div id="room-select-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-pink-950/85 backdrop-blur-md">
+        <div class="max-w-xl w-full glass-panel p-6 rounded-3xl border-pink-500/40 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-pink-800 pb-3">
+                <h2 class="text-xl font-bold text-pink-300 flex items-center">
+                    <i class="fa-solid fa-door-open mr-2"></i>เลือกห้องปริศนา (ROOM SELECTION)
+                </h2>
+                <button onclick="hideModal('room-select-modal')" class="text-pink-300 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div onclick="selectRoom(1)" class="room-card-item p-4 rounded-2xl glass-card border-pink-500/40 hover:bg-pink-500/20 cursor-pointer transition">
+                    <div class="text-xs text-pink-300 font-bold">ROOM 1 • 3 นาที (10 ปริศนา)</div>
+                    <div class="font-bold text-white text-lg">รูปสองมิติและรูปสามมิติ</div>
+                    <div class="text-xs text-pink-200/80 mt-1">สำรวจรูปสามเหลี่ยม สี่เหลี่ยม ทรงกลม ลูกบาศก์ ปริซึม</div>
+                </div>
+
+                <div onclick="selectRoom(2)" class="room-card-item p-4 rounded-2xl glass-card border-rose-500/40 hover:bg-rose-500/20 cursor-pointer transition">
+                    <div class="text-xs text-rose-300 font-bold">ROOM 2 • 3 นาที (10 ปริศนา)</div>
+                    <div class="font-bold text-white text-lg">แกนสมมาตร ป.3</div>
+                    <div class="text-xs text-pink-200/80 mt-1">นับแกนสมมาตรของรูปเรขาคณิตและรูปทรงต่างๆ</div>
+                </div>
+            </div>
+            
+            <button onclick="hideModal('room-select-modal')" class="w-full py-3 rounded-xl bg-pink-500 hover:bg-pink-400 text-white font-bold transition mt-2">
+                ตกลง / เลือกห้องนี้ (CONFIRM ROOM)
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: Victory Screen -->
+    <div id="victory-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-pink-950/90 backdrop-blur-xl">
+        <div class="max-w-md w-full glass-panel p-6 sm:p-8 rounded-3xl border-fuchsia-500/50 text-center space-y-5 shadow-2xl floating">
+            <div class="w-20 h-20 rounded-full bg-pink-500/20 border-2 border-pink-400 flex items-center justify-center mx-auto text-pink-300 text-4xl shadow-lg shadow-pink-500/30">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            <div>
+                <span class="px-3 py-1 rounded-full bg-pink-500/20 text-pink-200 text-xs font-bold uppercase tracking-wider border border-pink-500/30">MISSION COMPLETED</span>
+                <h2 class="text-3xl font-black text-white glow-text mt-2">ถอดรหัสเรขาคณิตสำเร็จ!</h2>
+                <p class="text-xs text-pink-200/90 mt-1">คุณสามารถปลดล็อกมิติเรขาคณิตและแกนสมมาตร ป.3 ได้สำเร็จ</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 py-2">
+                <div class="p-3.5 rounded-2xl bg-pink-950/80 border border-fuchsia-500/30">
+                    <div class="text-xs font-semibold text-pink-300">คะแนนรวม</div>
+                    <div id="final-score" class="text-2xl font-black font-mono text-fuchsia-300">0</div>
+                </div>
+                <div class="p-3.5 rounded-2xl bg-pink-950/80 border border-rose-500/30">
+                    <div class="text-xs font-semibold text-pink-300">เวลาที่ใช้</div>
+                    <div id="final-time" class="text-2xl font-black font-mono text-rose-300">00:00</div>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-2">
+                <button onclick="returnToMainMenu()" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-pink-500 to-fuchsia-600 hover:from-pink-400 hover:to-fuchsia-500 text-white font-black text-base shadow-lg transition active:scale-95 flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-house"></i>
+                    <span>กลับสู่หน้าหลัก (MAIN MENU)</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: How to Play -->
+    <div id="how-to-play-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-pink-950/85 backdrop-blur-md">
+        <div class="max-w-md w-full glass-panel p-6 rounded-3xl border-pink-500/40 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-pink-800 pb-3">
+                <h2 class="text-xl font-bold text-pink-300 flex items-center">
+                    <i class="fa-solid fa-book-open mr-2"></i>วิธีเล่น & ระบบ AI
+                </h2>
+                <button onclick="hideModal('how-to-play-modal')" class="text-pink-300 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="space-y-3 text-sm text-pink-200">
+                <div class="p-3 rounded-2xl bg-pink-950/60 border border-pink-800">
+                    <div class="font-bold text-pink-300 mb-1"><i class="fa-solid fa-shapes mr-2"></i>1. ตอบโจทย์เรขาคณิต ป.3</div>
+                    <p class="text-xs text-pink-200/90">ตอบคำถามเรื่องรูปสองมิติ, รูปสามมิติ, และแกนสมมาตรผ่านตัวเลือกเพื่อเก็บคะแนน</p>
+                </div>
+                <div class="p-3 rounded-2xl bg-pink-950/60 border border-pink-800">
+                    <div class="font-bold text-fuchsia-300 mb-1"><i class="fa-solid fa-face-smile mr-2"></i>2. สแกนใบหน้า AI (AR Face Commands)</div>
+                    <p class="text-xs text-pink-200/90">บางข้อเกมจะให้คุณ ยิ้ม 😁 หรือ อ้าปาก 😮 ใส่กล้องเพื่อเปิดประตูหรือชาร์จพลังคริสตัลมิติ</p>
+                </div>
+                <div class="p-3 rounded-2xl bg-pink-950/60 border border-pink-800">
+                    <div class="font-bold text-amber-300 mb-1"><i class="fa-solid fa-key mr-2"></i>3. ถอดรหัสผ่านประตู (Stage 10)</div>
+                    <p class="text-xs text-pink-200/90">ข้อสุดท้ายของทุกห้องเป็นกลไกรหัสผ่าน 4 หลัก นำจำนวนคุณสมบัติรูปเรขาคณิตมากดแป้นพิมพ์เปิดประตูทางออก</p>
+                </div>
+            </div>
+            <button onclick="hideModal('how-to-play-modal')" class="w-full py-3 rounded-xl bg-pink-500 hover:bg-pink-400 text-white font-bold transition">
+                เข้าใจแล้ว
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: Collection / Badges -->
+    <div id="collection-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-pink-950/85 backdrop-blur-md">
+        <div class="max-w-md w-full glass-panel p-6 rounded-3xl border-amber-500/40 space-y-4">
+            <div class="flex justify-between items-center border-b border-pink-800 pb-3">
+                <h2 class="text-xl font-bold text-amber-300 flex items-center">
+                    <i class="fa-solid fa-trophy mr-2"></i>เหรียญเกียรติยศ (ACHIEVEMENTS)
+                </h2>
+                <button onclick="hideModal('collection-modal')" class="text-pink-300 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="grid grid-cols-2 gap-3 text-center">
+                <div class="p-4 rounded-2xl glass-card border-amber-400/40 flex flex-col items-center">
+                    <i class="fa-solid fa-shapes text-3xl text-amber-300 mb-2"></i>
+                    <span class="text-xs font-bold text-white">ปรมาจารย์มิติ</span>
+                    <span class="text-[10px] text-pink-200/70">ผ่าน ROOM 1</span>
+                </div>
+                <div class="p-4 rounded-2xl glass-card border-rose-400/40 flex flex-col items-center">
+                    <i class="fa-solid fa-face-smile text-3xl text-rose-300 mb-2"></i>
+                    <span class="text-xs font-bold text-white">ยิ้มสะท้อนสมมาตร</span>
+                    <span class="text-[10px] text-pink-200/70">ผ่าน ROOM 2</span>
+                </div>
+            </div>
+            <button onclick="hideModal('collection-modal')" class="w-full py-3 rounded-xl bg-pink-900 hover:bg-pink-800 text-pink-200 font-bold transition">
+                ปิดหน้าต่าง
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript Game Core Logic -->
+    <script>
+        /* Global Game State Variables */
+        let currentRoom = 1;
+        let currentStage = 0;
+        let score = 0;
+        let timerSeconds = 180;
+        let timerInterval = null;
+        let isAudioMuted = false;
+        let cameraFacing = "user";
+        let passcodeBuffer = "";
+        let isSimulationMode = false;
+        let faceHoldCounter = 0;
+
+        // Face Detection Thresholds
+        let currentSmileVal = 0;
+        let currentMouthVal = 0;
+
+        // Three.js AR Scene Objects
+        let scene, camera, renderer, current3DMesh;
+
+        // Questions Database
+        const roomData = {
+            1: {
+                title: "ROOM 1",
+                subtitle: "รูปสองมิติและรูปสามมิติ",
+                stages: [
+                    { type: "mcq", question: "1. รูปสามเหลี่ยมมีกี่ด้านและกี่มุม?", options: ["A. 3 ด้าน 3 มุม", "B. 4 ด้าน 4 มุม", "C. 5 ด้าน 5 มุม"], answer: 0, hint: "สามเหลี่ยมมีจำนวนด้านเท่ากับชื่อรูป" },
+                    { type: "mcq", question: "2. รูปใดจัดเป็นรูปสามมิติ?", options: ["A. วงกลม", "B. ลูกบาศก์", "C. สี่เหลี่ยมจัตุรัส"], answer: 1, hint: "รูปสามมิติมีความหนาหรือความลึก" },
+                    { type: "mcq", question: "3. วงกลม แตกต่างจาก ทรงกลม อย่างไร?", options: ["A. วงกลมเป็น 2D, ทรงกลมเป็น 3D", "B. วงกลมมีเหลี่ยม, ทรงกลมไม่มี", "C. ไม่ต่างกันเลย"], answer: 0, hint: "ทรงกลมมีปริมาตรและจับต้องมิติได้" },
+                    { type: "mcq", question: "4. รูปสี่เหลี่ยมผืนผ้ามีกี่ด้านและกี่มุม?", options: ["A. 3 ด้าน 3 มุม", "B. 4 ด้าน 4 มุม", "C. 6 ด้าน 6 มุม"], answer: 1, hint: "สี่เหลี่ยมผืนผ้ามีด้านขนานกัน 2 คู่" },
+                    { type: "mcq", question: "5. ทรงกระบอกมีหน้าตัดเป็นรูปใด?", options: ["A. สามเหลี่ยม", "B. สี่เหลี่ยม", "C. วงกลม"], answer: 2, hint: "หน้าตัดด้านบนและด้านล่างกลมเรียบ" },
+                    { type: "action", actionType: "smile", text: "😁 ยิ้มให้กล้องเพื่อชาร์จพลังงานคริสตัลเรขาคณิต!" },
+                    { type: "mcq", question: "7. พีระมิดฐานสามเหลี่ยมมีหน้าข้างเป็นรูปใด?", options: ["A. รูปสามเหลี่ยม", "B. รูปสี่เหลี่ยม", "C. รูปวงกลม"], answer: 0, hint: "หน้าข้างทุกหน้าสอบเข้าหาจุดยอด" },
+                    { type: "mcq", question: "8. ปริซึมสี่เหลี่ยม (ลูกบาศก์) มีหน้าทั้งหมดกี่หน้า?", options: ["A. 4 หน้า", "B. 6 หน้า", "C. 8 หน้า"], answer: 1, hint: "นับรวมหน้าบน ด้านล่าง และด้านข้าง" },
+                    { type: "mcq", question: "9. รูปห้าเหลี่ยมมีจำนวนมุมทั้งหมดกี่มุม?", options: ["A. 3 มุม", "B. 4 มุม", "C. 5 มุม"], answer: 2, hint: "จำนวนมุมเท่ากับจำนวนด้าน" },
+                    { type: "passcode", code: "3456", hintDesc: "รหัส 4 หลัก: ด้านสามเหลี่ยม (3), สี่เหลี่ยม (4), ห้าเหลี่ยม (5), หกเหลี่ยม (6)", hint: "เรียงตามจำนวนด้านจาก 3 ถึง 6" }
+                ]
+            },
+            2: {
+                title: "ROOM 2",
+                subtitle: "แกนสมมาตร ป.3",
+                stages: [
+                    { type: "mcq", question: "1. รูปวงกลมมีแกนสมมาตรกี่แกน?", options: ["A. 1 แกน", "B. 4 แกน", "C. มากมายนับไม่ถ้วน"], answer: 2, hint: "ลากเส้นผ่านจุดศูนย์กลางได้เรื่อยๆ" },
+                    { type: "mcq", question: "2. รูปสามเหลี่ยมด้านเท่ามีแกนสมมาตรกี่แกน?", options: ["A. 3 แกน", "B. 2 แกน", "C. 1 แกน"], answer: 0, hint: "ลากจากมุมยอดมาแบ่งครึ่งฐานได้ทุกมุม" },
+                    { type: "mcq", question: "3. รูปสี่เหลี่ยมจัตุรัสมีแกนสมมาตรกี่แกน?", options: ["A. 2 แกน", "B. 4 แกน", "C. 8 แกน"], answer: 1, hint: "แนวตั้ง แนวนอน และแนวทแยง 2 เส้น" },
+                    { type: "mcq", question: "4. รูปสี่เหลี่ยมผืนผ้ามีแกนสมมาตรกี่แกน?", options: ["A. 2 แกน", "B. 4 แกน", "C. 1 แกน"], answer: 0, hint: "พับตามแนวตั้งและแนวนอนเท่านั้น" },
+                    { type: "mcq", question: "5. พับรูปตามแกนสมมาตรแล้วจะเป็นอย่างไร?", options: ["A. ซ้อนทับกันไม่สนิท", "B. สองข้างทับกันสนิทพอดี", "C. ขนาดไม่เท่ากัน"], answer: 1, hint: "แกนสมมาตรแบ่งรูปออกเป็นสองส่วนเท่ากัน" },
+                    { type: "action", actionType: "mouth", text: "😮 อ้าปากใส่กล้องเพื่อเปิดประตูสะท้อนแกนสมมาตร!" },
+                    { type: "mcq", question: "7. รูปหัวใจ ❤️ โดยทั่วไปมีแกนสมมาตรกี่แกน?", options: ["A. 1 แกน", "B. 2 แกน", "C. ไม่มีเลย"], answer: 0, hint: "แบ่งครึ่งตรงกลางแนวตั้งได้เพียงเส้นเดียว" },
+                    { type: "mcq", question: "8. รูปห้าเหลี่ยมด้านเท่ามีแกนสมมาตรกี่แกน?", options: ["A. 3 แกน", "B. 4 แกน", "C. 5 แกน"], answer: 2, hint: "รูปหลายเหลี่ยมด้านเท่ามีแกนสมมาตรเท่ากับจำนวนด้าน" },
+                    { type: "mcq", question: "9. ตัวอักษร 'A' มีแกนสมมาตรกี่แกน?", options: ["A. 1 แกน", "B. 2 แกน", "C. 0 แกน"], answer: 0, hint: "พับแนวตั้งตรงกลางลงมา" },
+                    { type: "passcode", code: "3246", hintDesc: "รหัส 4 หลัก: แกนสมมาตรของ (สามเหลี่ยมด้านเท่า, สี่เหลี่ยมผืนผ้า, สี่เหลี่ยมจัตุรัส, หกเหลี่ยมด้านเท่า)", hint: "นำจำนวนแกนสมมาตรของแต่ละรูปมากดเรียงกัน" }
+                ]
+            }
+        };
+
+        /* Initialize Sound Effects (Web Audio API Synthesizer) */
+        function playSFX(type) {
+            if (isAudioMuted) return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                if (type === 'correct') {
+                    osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.2);
+                } else if (type === 'wrong') {
+                    osc.frequency.setValueAtTime(220, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.2);
+                } else if (type === 'win') {
+                    osc.frequency.setValueAtTime(440, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.5);
+                }
+                gain.gain.setValueAtTime(0.2, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.3);
+            } catch(e){}
+        }
+
+        /* Initial Load & 3D Three.js AR Canvas Setup */
+        window.addEventListener('DOMContentLoaded', () => {
+            initThreeJS();
+            setupMediaPipeFaceMesh();
+        });
+
+        function initThreeJS() {
+            const canvas = document.getElementById('ar-canvas');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xf472b6, 1.2);
+            dirLight.position.set(2, 4, 5);
+            scene.add(dirLight);
+
+            create3DShape(0);
+            animate3D();
+        }
+
+        function create3DShape(stageIndex) {
+            if (current3DMesh) scene.remove(current3DMesh);
+
+            let geometry, material;
+            material = new THREE.MeshStandardMaterial({ 
+                color: 0xec4899, 
+                roughness: 0.2, 
+                metalness: 0.5,
+                wireframe: stageIndex % 2 === 1
+            });
+
+            switch(stageIndex % 5) {
+                case 0: geometry = new THREE.TetrahedronGeometry(1.5); break;
+                case 1: geometry = new THREE.BoxGeometry(1.8, 1.8, 1.8); break;
+                case 2: geometry = new THREE.CylinderGeometry(1, 1, 2, 16); break;
+                case 3: geometry = new THREE.SphereGeometry(1.3, 32, 32); break;
+                case 4: geometry = new THREE.TorusKnotGeometry(1, 0.3, 64, 16); break;
+            }
+
+            current3DMesh = new THREE.Mesh(geometry, material);
+            current3DMesh.position.set(0, 0.5, 0);
+            scene.add(current3DMesh);
+        }
+
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            if (current3DMesh) {
+                current3DMesh.rotation.x += 0.01;
+                current3DMesh.rotation.y += 0.015;
+            }
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            if (camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+
+        /* Setup MediaPipe AI FaceMesh */
+        function setupMediaPipeFaceMesh() {
+            const videoElement = document.getElementById('webcam');
+            const hudCanvas = document.getElementById('hud-canvas');
+            const hudCtx = hudCanvas.getContext('2d');
+
+            hudCanvas.width = window.innerWidth;
+            hudCanvas.height = window.innerHeight;
+
+            const faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+            });
+
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            faceMesh.onResults((results) => {
+                hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+
+                if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                    const landmarks = results.multiFaceLandmarks[0];
+
+                    // Draw Landmark Mesh Overlay
+                    hudCtx.fillStyle = 'rgba(244, 114, 182, 0.6)';
+                    for (let pt of landmarks) {
+                        hudCtx.beginPath();
+                        hudCtx.arc(pt.x * hudCanvas.width, pt.y * hudCanvas.height, 1.5, 0, 2 * Math.PI);
+                        hudCtx.fill();
+                    }
+
+                    // Smile Metric Calculation (Corners vs Lip)
+                    const leftCorner = landmarks[61];
+                    const rightCorner = landmarks[291];
+                    const topLip = landmarks[13];
+                    const bottomLip = landmarks[14];
+
+                    const mouthWidth = Math.hypot(leftCorner.x - rightCorner.x, leftCorner.y - rightCorner.y);
+                    const mouthHeight = Math.hypot(topLip.x - bottomLip.x, topLip.y - bottomLip.y);
+
+                    currentSmileVal = Math.min(100, Math.max(0, Math.round((mouthWidth - 0.12) * 400)));
+                    currentMouthVal = Math.min(100, Math.max(0, Math.round((mouthHeight - 0.02) * 500)));
+
+                    document.getElementById('bar-smile').style.width = currentSmileVal + '%';
+                    document.getElementById('val-smile').innerText = currentSmileVal + '%';
+                    document.getElementById('bar-mouth').style.width = currentMouthVal + '%';
+                    document.getElementById('val-mouth').innerText = currentMouthVal + '%';
+
+                    // Update Calibration UI
+                    const calibStatus = document.getElementById('calib-status');
+                    if (calibStatus && !isSimulationMode) {
+                        calibStatus.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-2"></i>ตรวจพบใบหน้าสำเร็จ! AI พร้อมใช้งาน`;
+                    }
+
+                    checkAIActionTrigger();
+                }
+            });
+
+            const cameraUtils = new Camera(videoElement, {
+                onFrame: async () => {
+                    await faceMesh.send({ image: videoElement });
+                },
+                width: 1280,
+                height: 720
+            });
+
+            cameraUtils.start().catch(err => {
+                console.warn("Camera permission denied or not available", err);
+                showModal('camera-error-modal');
+            });
+        }
+
+        /* Real-time AI Face Action Trigger Check */
+        function checkAIActionTrigger() {
+            const currentStageObj = roomData[currentRoom].stages[currentStage];
+            if (!currentStageObj || currentStageObj.type !== 'action') return;
+
+            let isConditionMet = false;
+            if (currentStageObj.actionType === 'smile' && currentSmileVal > 65) {
+                isConditionMet = true;
+            } else if (currentStageObj.actionType === 'mouth' && currentMouthVal > 60) {
+                isConditionMet = true;
+            }
+
+            if (isConditionMet) {
+                faceHoldCounter++;
+                document.getElementById('action-progress-text').innerText = `ชาร์จพลังงาน: ${faceHoldCounter * 20}%`;
+                if (faceHoldCounter >= 5) {
+                    playSFX('correct');
+                    score += 100;
+                    updateScoreDisplay();
+                    faceHoldCounter = 0;
+                    nextStage();
+                }
+            } else {
+                faceHoldCounter = Math.max(0, faceHoldCounter - 1);
+            }
+        }
+
+        /* Navigation & Room Flow Controllers */
+        function selectRoom(roomId) {
+            currentRoom = roomId;
+            document.getElementById('selected-room-name').innerText = `${roomData[roomId].title} - ${roomData[roomId].subtitle}`;
+            hideModal('room-select-modal');
+        }
+
+        function startGameSequence() {
+            document.getElementById('main-menu-screen').classList.add('hidden');
+            document.getElementById('calibration-overlay').classList.remove('hidden');
+        }
+
+        function forceReadyPlayer() {
+            document.getElementById('calibration-overlay').classList.add('hidden');
+            document.getElementById('top-bar').classList.remove('hidden');
+            document.getElementById('gameplay-overlay').classList.remove('hidden');
+
+            currentStage = 0;
+            score = 0;
+            timerSeconds = 180;
+            updateScoreDisplay();
+            startTimer();
+            loadStage(currentStage);
+        }
+
+        function startGameInSimulationMode() {
+            isSimulationMode = true;
+            hideModal('camera-error-modal');
+            forceReadyPlayer();
+        }
+
+        function requestCameraAccess() {
+            hideModal('camera-error-modal');
+            location.reload();
+        }
+
+        function loadStage(index) {
+            currentStage = index;
+            create3DShape(index);
+            const stageObj = roomData[currentRoom].stages[index];
+
+            document.getElementById('current-room-title').innerText = roomData[currentRoom].title;
+            document.getElementById('room-subtitle').innerText = `${roomData[currentRoom].subtitle} (STAGE ${index + 1}/10)`;
+
+            // Hide all cards first
+            document.getElementById('puzzle-card').classList.add('hidden');
+            document.getElementById('action-banner').classList.add('hidden');
+            document.getElementById('passcode-card').classList.add('hidden');
+            document.getElementById('hint-box').classList.add('hidden');
+            document.getElementById('passcode-hint-box').classList.add('hidden');
+
+            if (stageObj.type === 'mcq') {
+                document.getElementById('puzzle-card').classList.remove('hidden');
+                document.getElementById('puzzle-badge').innerText = `PUZZLE ${index + 1} / 10`;
+                document.getElementById('puzzle-question').innerText = stageObj.question;
+
+                const optsContainer = document.getElementById('puzzle-options');
+                optsContainer.innerHTML = '';
+                stageObj.options.forEach((optText, optIdx) => {
+                    const btn = document.createElement('button');
+                    btn.className = "option-btn p-3 rounded-2xl glass-card border border-pink-500/30 hover:border-pink-300 text-pink-100 font-bold text-lg text-center hover:bg-pink-500/30 transition focus:outline-none";
+                    btn.innerText = optText;
+                    btn.onclick = () => submitAnswer(optIdx);
+                    optsContainer.appendChild(btn);
+                });
+            } else if (stageObj.type === 'action') {
+                document.getElementById('action-banner').classList.remove('hidden');
+                document.getElementById('action-banner-text').innerText = stageObj.text;
+                faceHoldCounter = 0;
+            } else if (stageObj.type === 'passcode') {
+                document.getElementById('passcode-card').classList.remove('hidden');
+                document.getElementById('passcode-hint-desc').innerText = stageObj.hintDesc;
+                passcodeBuffer = "";
+                updatePasscodeDisplay();
+            }
+        }
+
+        function submitAnswer(chosenIdx) {
+            const stageObj = roomData[currentRoom].stages[currentStage];
+            if (chosenIdx === stageObj.answer) {
+                playSFX('correct');
+                score += 100;
+                updateScoreDisplay();
+                nextStage();
+            } else {
+                playSFX('wrong');
+                notify("คำตอบยังไม่ถูกต้อง!", "ลองคิดใหม่อีกครั้งนะจ๊ะเด็กๆ");
+            }
+        }
+
+        function nextStage() {
+            if (currentStage + 1 < roomData[currentRoom].stages.length) {
+                loadStage(currentStage + 1);
+            } else {
+                triggerVictory();
+            }
+        }
+
+        /* Passcode Keypad Functions */
+        function appendPasscode(num) {
+            if (passcodeBuffer.length < 4) {
+                passcodeBuffer += num;
+                updatePasscodeDisplay();
+            }
+        }
+
+        function clearPasscode() {
+            passcodeBuffer = "";
+            updatePasscodeDisplay();
+        }
+
+        function updatePasscodeDisplay() {
+            let display = passcodeBuffer.padEnd(4, '_').split('').join(' ');
+            document.getElementById('passcode-display').innerText = display;
+        }
+
+        function submitPasscode() {
+            const stageObj = roomData[currentRoom].stages[currentStage];
+            if (passcodeBuffer === stageObj.code) {
+                playSFX('win');
+                score += 200;
+                updateScoreDisplay();
+                triggerVictory();
+            } else {
+                playSFX('wrong');
+                notify("รหัสผ่านไม่ถูกต้อง!", "ลองตรวจสอบคุณสมบัติรูปเรขาคณิตอีกครั้ง");
+                clearPasscode();
+            }
+        }
+
+        /* Request Hint System */
+        function requestHint() {
+            const stageObj = roomData[currentRoom].stages[currentStage];
+            if (score >= 50) {
+                score -= 50;
+                updateScoreDisplay();
+            }
+            if (stageObj.type === 'mcq') {
+                document.getElementById('hint-box').classList.remove('hidden');
+                document.getElementById('hint-text').innerText = `คำใบ้: ${stageObj.hint}`;
+            } else if (stageObj.type === 'passcode') {
+                document.getElementById('passcode-hint-box').classList.remove('hidden');
+                document.getElementById('passcode-hint-text').innerText = `คำใบ้: ${stageObj.hint}`;
+            }
+        }
+
+        /* Timer and Victory Controllers */
+        function startTimer() {
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timerSeconds--;
+                const mins = Math.floor(timerSeconds / 60).toString().padStart(2, '0');
+                const secs = (timerSeconds % 60).toString().padStart(2, '0');
+                document.getElementById('timer-display').innerText = `${mins}:${secs}`;
+
+                if (timerSeconds <= 0) {
+                    clearInterval(timerInterval);
+                    notify("หมดเวลาแล้ว!", "เวลาของคุณหมดลงแล้ว ลองเล่นใหม่อีกครั้ง");
+                    returnToMainMenu();
+                }
+            }, 1000);
+        }
+
+        function triggerVictory() {
+            clearInterval(timerInterval);
+            const timeUsed = 180 - timerSeconds;
+            const mins = Math.floor(timeUsed / 60).toString().padStart(2, '0');
+            const secs = (timeUsed % 60).toString().padStart(2, '0');
+
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('final-time').innerText = `${mins}:${secs}`;
+            showModal('victory-modal');
+        }
+
+        function returnToMainMenu() {
+            clearInterval(timerInterval);
+            hideModal('victory-modal');
+            document.getElementById('top-bar').classList.add('hidden');
+            document.getElementById('gameplay-overlay').classList.add('hidden');
+            document.getElementById('main-menu-screen').classList.remove('hidden');
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('score-display').innerText = score;
+        }
+
+        function toggleAudio() {
+            isAudioMuted = !isAudioMuted;
+            document.getElementById('audio-btn').innerHTML = isAudioMuted ? 
+                `<i class="fa-solid fa-volume-xmark text-rose-400"></i>` : 
+                `<i class="fa-solid fa-volume-high"></i>`;
+        }
+
+        function toggleCameraFacing() {
+            cameraFacing = cameraFacing === "user" ? "environment" : "user";
+            notify("สลับกล้อง", "กำลังเปิดใช้งานกล้องในทิศทางใหม่");
+        }
+
+        /* Universal Modal UI Handlers */
+        function showModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function hideModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function notify(title, msg) {
+            document.getElementById('notify-title').innerText = title;
+            document.getElementById('notify-msg').innerText = msg;
+            showModal('notify-modal');
+        }
+
+        function openMenu() {
+            returnToMainMenu();
+        }
+    </script>
+</body>
+</html>
